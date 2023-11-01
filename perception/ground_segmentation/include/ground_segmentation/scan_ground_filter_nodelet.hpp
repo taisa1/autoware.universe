@@ -68,8 +68,8 @@ private:
     size_t radial_div;  // index of the radial division to which this point belongs to
     PointLabel point_state{PointLabel::INIT};
 
-    size_t orig_index;  // index of this point in the source pointcloud
-    pcl::PointXYZ * orig_point;
+    size_t orig_index;             // index of this point in the source pointcloud
+    Eigen::Vector3f orig_point;  // changed
   };
   using PointCloudRefVector = std::vector<PointRef>;
 
@@ -152,6 +152,12 @@ private:
   tf2_ros::Buffer tf_buffer_{get_clock()};
   tf2_ros::TransformListener tf_listener_{tf_buffer_};
 
+  int x_offset_;
+  int y_offset_;
+  int z_offset_;
+  int intensity_offset_;
+  bool offset_initialized_;
+
   const uint16_t gnd_grid_continual_thresh_ = 3;
   bool elevation_grid_mode_;
   float non_ground_height_threshold_;
@@ -192,16 +198,16 @@ private:
    *     each element will contain the points ordered
    */
   void convertPointcloud(
-    const pcl::PointCloud<pcl::PointXYZ>::Ptr in_cloud,
+    const PointCloud2ConstPtr & in_cloud,
     std::vector<PointCloudRefVector> & out_radial_ordered_points_manager);
   void convertPointcloudGridScan(
-    const pcl::PointCloud<pcl::PointXYZ>::Ptr in_cloud,
+    const PointCloud2ConstPtr & in_cloud,
     std::vector<PointCloudRefVector> & out_radial_ordered_points_manager);
   /*!
    * Output ground center of front wheels as the virtual ground point
    * @param[out] point Virtual ground origin point
    */
-  void calcVirtualGroundOrigin(pcl::PointXYZ & point);
+  void calcVirtualGroundOrigin(Eigen::Vector3f & point);
 
   /*!
    * Classifies Points in the PointCloud as Ground and Not Ground
@@ -235,13 +241,13 @@ private:
   /*!
    * Returns the resulting complementary PointCloud, one with the points kept
    * and the other removed as indicated in the indices
-   * @param in_cloud_ptr Input PointCloud to which the extraction will be performed
+   * @param in_cloud Input PointCloud to which the extraction will be performed
    * @param in_indices Indices of the points to be both removed and kept
-   * @param out_object_cloud_ptr Resulting PointCloud with the indices kept
+   * @param out_object_cloud Resulting PointCloud with the indices kept
    */
   void extractObjectPoints(
-    const pcl::PointCloud<pcl::PointXYZ>::Ptr in_cloud_ptr, const pcl::PointIndices & in_indices,
-    pcl::PointCloud<pcl::PointXYZ>::Ptr out_object_cloud_ptr);
+    const PointCloud2ConstPtr & in_cloud_ptr, const pcl::PointIndices & in_indices,
+    PointCloud2 & out_object_cloud);  // changed
 
   /** \brief Parameter service callback result : needed to be hold */
   OnSetParametersCallbackHandle::SharedPtr set_param_res_;
@@ -254,10 +260,20 @@ private:
     nullptr};
   std::unique_ptr<tier4_autoware_utils::DebugPublisher> debug_publisher_ptr_{nullptr};
 
+  Eigen::Vector3f get_point_from_global_offset(
+    const PointCloud2ConstPtr & input, size_t global_offset);
+  
+  void set_field_offsets(const PointCloud2ConstPtr & input);
+
+  // for calcdistance3d
+  inline float calcDistance3dVec3f(const Eigen::Vector3f & point1, const Eigen::Vector3f & point2)
+  {
+    return std::hypot(std::hypot(point1.x() - point2.x(), point1.y() - point2.y()), point1.z() - point2.z());
+  }
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   explicit ScanGroundFilterComponent(const rclcpp::NodeOptions & options);
-
+  ~ScanGroundFilterComponent();
   // for test
   friend ScanGroundFilterTest;
 };
