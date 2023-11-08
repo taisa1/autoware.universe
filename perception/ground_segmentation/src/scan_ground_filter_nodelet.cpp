@@ -92,30 +92,6 @@ ScanGroundFilterComponent::~ScanGroundFilterComponent()
   pmu_analyzer::PMU_CLOSE();
 }
 
-void ScanGroundFilterComponent::set_field_offsets(const PointCloud2ConstPtr & input)
-{
-  x_offset_ = input->fields[pcl::getFieldIndex(*input, "x")].offset;
-  y_offset_ = input->fields[pcl::getFieldIndex(*input, "y")].offset;
-  z_offset_ = input->fields[pcl::getFieldIndex(*input, "z")].offset;
-  int intensity_index = pcl::getFieldIndex(*input, "intensity");
-  if (intensity_index != -1) {
-    intensity_offset_ = input->fields[intensity_index].offset;
-  } else {
-    intensity_offset_ = z_offset_ + sizeof(float);
-  }
-  offset_initialized_ = true;
-}
-
-Eigen::Vector3f ScanGroundFilterComponent::get_point_from_global_offset(
-  const PointCloud2ConstPtr & input, size_t global_offset)
-{
-  Eigen::Vector3f point(
-    *reinterpret_cast<const float *>(&input->data[global_offset + x_offset_]),
-    *reinterpret_cast<const float *>(&input->data[global_offset + y_offset_]),
-    *reinterpret_cast<const float *>(&input->data[global_offset + z_offset_]));
-  return point;
-}
-
 void ScanGroundFilterComponent::convertPointcloudGridScan(
   const PointCloud2ConstPtr & in_cloud,
   std::vector<PointCloudRefVector> & out_radial_ordered_points)
@@ -128,7 +104,7 @@ void ScanGroundFilterComponent::convertPointcloudGridScan(
     normalizeRadian(std::atan2(grid_mode_switch_radius_ + grid_size_m_, virtual_lidar_z_)) -
     normalizeRadian(std::atan2(grid_mode_switch_radius_, virtual_lidar_z_));
 
-  size_t i = 0;
+  size_t point_index = 0;
   for (size_t global_offset = 0; global_offset + in_cloud->point_step <= in_cloud->data.size();
        global_offset += in_cloud->point_step) {
     // Point
@@ -165,13 +141,17 @@ void ScanGroundFilterComponent::convertPointcloudGridScan(
     current_point.theta = theta;
     current_point.radial_div = radial_div;
     current_point.point_state = PointLabel::INIT;
-    current_point.orig_index = i;
+    current_point.orig_index = point_index;
     current_point.orig_point = input_point;
 
     // radial divisions
     out_radial_ordered_points[radial_div].emplace_back(current_point);
-    ++i;
+    ++point_index;
   }
+  std::string session_name = "scan_ground_filter_node";
+
+  pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 2, false, 2);
+
   //  fprintf(stderr, "gridscan i = %d.\n", (int)i);
   // sort by distance
   for (size_t i = 0; i < radial_dividers_num_; ++i) {
@@ -187,7 +167,7 @@ void ScanGroundFilterComponent::convertPointcloud(
   out_radial_ordered_points.resize(radial_dividers_num_);
   PointRef current_point;
 
-  size_t i = 0;
+  size_t point_index = 0;
   for (size_t global_offset = 0; global_offset + in_cloud->point_step <= in_cloud->data.size();
        global_offset += in_cloud->point_step) {
     // Point
@@ -202,12 +182,12 @@ void ScanGroundFilterComponent::convertPointcloud(
     current_point.theta = theta;
     current_point.radial_div = radial_div;
     current_point.point_state = PointLabel::INIT;
-    current_point.orig_index = i;
+    current_point.orig_index = point_index;
     current_point.orig_point = input_point;
 
     // radial divisions
     out_radial_ordered_points[radial_div].emplace_back(current_point);
-    ++i;
+    ++point_index;
   }
 
   // sort by distance
@@ -325,8 +305,8 @@ void ScanGroundFilterComponent::recheckGroundCluster(
   pcl::PointIndices & non_ground_indices)
 {
   const float min_gnd_height = gnd_cluster.getMinHeight();
-  pcl::PointIndices gnd_indices = gnd_cluster.getIndices();
-  std::vector<float> height_list = gnd_cluster.getHeightList();
+  pcl::PointIndices & gnd_indices = gnd_cluster.getIndicesRef();
+  std::vector<float> & height_list = gnd_cluster.getHeightListRef();
   for (size_t i = 0; i < height_list.size(); ++i) {
     if (height_list.at(i) >= min_gnd_height + non_ground_threshold) {
       non_ground_indices.indices.push_back(gnd_indices.indices.at(i));
@@ -618,7 +598,7 @@ void ScanGroundFilterComponent::filter(
     convertPointcloudGridScan(input, radial_ordered_points);
     pmu_analyzer::PMU_TRACE_END(trace_id);
     trace_id++;
-    pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 2, false, 2);
+    pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 3, false, 3);
 
     classifyPointCloudGridScan(radial_ordered_points, no_ground_indices);
   } else {
@@ -627,7 +607,7 @@ void ScanGroundFilterComponent::filter(
     classifyPointCloud(radial_ordered_points, no_ground_indices);
   }
 
-  pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 3, false, 3);
+  pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 4, false, 4);
 
   output.row_step = no_ground_indices.indices.size() * input->point_step;
   output.data.resize(output.row_step);
@@ -642,7 +622,7 @@ void ScanGroundFilterComponent::filter(
   //  fprintf(stderr, "size of no_ground_indices: %d.\n", (int)(no_ground_indices.indices.size()));
   extractObjectPoints(input, no_ground_indices, output);
 
-  pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 4, false, 4);
+  pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 5, false, 5);
 
   if (debug_publisher_ptr_ && stop_watch_ptr_) {
     const double cyclic_time_ms = stop_watch_ptr_->toc("cyclic_time", true);
@@ -653,7 +633,7 @@ void ScanGroundFilterComponent::filter(
       "debug/processing_time_ms", processing_time_ms);
   }
 
-  pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 5, false, 5);
+  pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 6, false, 6);
 }
 
 rcl_interfaces::msg::SetParametersResult ScanGroundFilterComponent::onParameter(

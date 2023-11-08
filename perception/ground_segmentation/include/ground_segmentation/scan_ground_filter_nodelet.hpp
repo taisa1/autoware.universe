@@ -68,7 +68,7 @@ private:
     size_t radial_div;  // index of the radial division to which this point belongs to
     PointLabel point_state{PointLabel::INIT};
 
-    size_t orig_index;             // index of this point in the source pointcloud
+    size_t orig_index;           // index of this point in the source pointcloud
     Eigen::Vector3f orig_point;  // changed
   };
   using PointCloudRefVector = std::vector<PointRef>;
@@ -144,6 +144,9 @@ private:
 
     pcl::PointIndices getIndices() { return pcl_indices; }
     std::vector<float> getHeightList() { return height_list; }
+
+    pcl::PointIndices & getIndicesRef() { return pcl_indices; }
+    std::vector<float> & getHeightListRef() { return height_list; }
   };
 
   void filter(
@@ -260,16 +263,37 @@ private:
     nullptr};
   std::unique_ptr<tier4_autoware_utils::DebugPublisher> debug_publisher_ptr_{nullptr};
 
-  Eigen::Vector3f get_point_from_global_offset(
-    const PointCloud2ConstPtr & input, size_t global_offset);
-  
-  void set_field_offsets(const PointCloud2ConstPtr & input);
+  inline Eigen::Vector3f get_point_from_global_offset(
+    const PointCloud2ConstPtr & input, size_t global_offset)
+  {
+    Eigen::Vector3f point(
+      *reinterpret_cast<const float *>(&input->data[global_offset + x_offset_]),
+      *reinterpret_cast<const float *>(&input->data[global_offset + y_offset_]),
+      *reinterpret_cast<const float *>(&input->data[global_offset + z_offset_]));
+    return point;
+  }
+
+  inline void set_field_offsets(const PointCloud2ConstPtr & input)
+  {
+    x_offset_ = input->fields[pcl::getFieldIndex(*input, "x")].offset;
+    y_offset_ = input->fields[pcl::getFieldIndex(*input, "y")].offset;
+    z_offset_ = input->fields[pcl::getFieldIndex(*input, "z")].offset;
+    int intensity_index = pcl::getFieldIndex(*input, "intensity");
+    if (intensity_index != -1) {
+      intensity_offset_ = input->fields[intensity_index].offset;
+    } else {
+      intensity_offset_ = z_offset_ + sizeof(float);
+    }
+    offset_initialized_ = true;
+  }
 
   // for calcdistance3d
   inline float calcDistance3dVec3f(const Eigen::Vector3f & point1, const Eigen::Vector3f & point2)
   {
-    return std::hypot(std::hypot(point1.x() - point2.x(), point1.y() - point2.y()), point1.z() - point2.z());
+    return std::hypot(
+      std::hypot(point1.x() - point2.x(), point1.y() - point2.y()), point1.z() - point2.z());
   }
+
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   explicit ScanGroundFilterComponent(const rclcpp::NodeOptions & options);
