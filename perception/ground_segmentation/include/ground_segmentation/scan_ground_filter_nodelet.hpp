@@ -61,15 +61,14 @@ private:
   };
   struct PointRef
   {
-    float grid_size;    // radius of grid
-    uint16_t grid_id;   // id of grid in vertical
-    float radius;       // cylindrical coords on XY Plane
-    float theta;        // angle deg on XY plane
-    size_t radial_div;  // index of the radial division to which this point belongs to
+    float grid_size;  // radius of grid
+    float radius;     // cylindrical coords on XY Plane
+    float theta;      // angle deg on XY plane
     PointLabel point_state{PointLabel::INIT};
-
+    size_t radial_div;           // index of the radial division to which this point belongs to
     size_t orig_index;           // index of this point in the source pointcloud
     Eigen::Vector3f orig_point;  // changed
+    uint16_t grid_id;            // id of grid in vertical
   };
   using PointCloudRefVector = std::vector<PointRef>;
 
