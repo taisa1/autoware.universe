@@ -105,24 +105,28 @@ void ScanGroundFilterComponent::convertPointcloudGridScan(
     normalizeRadian(std::atan2(grid_mode_switch_radius_, virtual_lidar_z_));
 
   size_t point_index = 0;
+  float x, radius, curr_grid_size;
+  double theta, gamma;
+  size_t radial_div;
+  uint16_t grid_id;
+  Eigen::Vector3f input_point;
   for (size_t global_offset = 0; global_offset + in_cloud->point_step <= in_cloud->data.size();
        global_offset += in_cloud->point_step) {
     // Point
-    Eigen::Vector3f input_point = get_point_from_global_offset(in_cloud, global_offset);
+    input_point = get_point_from_global_offset(in_cloud, global_offset);
 
-    auto x{
-      input_point.x() - vehicle_info_.wheel_base_m / 2.0f -
-      center_pcl_shift_};  // base on front wheel center
+    x = input_point.x() - vehicle_info_.wheel_base_m / 2.0f -
+        center_pcl_shift_;  // base on front wheel center
     // auto y{input_point.y()};
-    auto radius{static_cast<float>(std::hypot(x, input_point.y()))};
-    auto theta{normalizeRadian(std::atan2(x, input_point.y()), 0.0)};
+    radius = static_cast<float>(std::hypot(x, input_point.y()));
+    theta = normalizeRadian(std::atan2(x, input_point.y()), 0.0);
 
     // divide by vertical angle
-    auto gamma{normalizeRadian(std::atan2(radius, virtual_lidar_z_), 0.0f)};
-    auto radial_div{
-      static_cast<size_t>(std::floor(normalizeDegree(theta / radial_divider_angle_rad_, 0.0)))};
-    uint16_t grid_id = 0;
-    float curr_grid_size = 0.0f;
+    gamma = normalizeRadian(std::atan2(radius, virtual_lidar_z_), 0.0f);
+    radial_div =
+      static_cast<size_t>(std::floor(normalizeDegree(theta / radial_divider_angle_rad_, 0.0)));
+    grid_id = 0;
+    curr_grid_size = 0.0f;
     if (radius <= grid_mode_switch_radius_) {
       grid_id = static_cast<uint16_t>(radius / grid_size_m_);
       curr_grid_size = grid_size_m_;
@@ -166,17 +170,20 @@ void ScanGroundFilterComponent::convertPointcloud(
 {
   out_radial_ordered_points.resize(radial_dividers_num_);
   PointRef current_point;
-
+  float radius, theta;
+  size_t radial_div;
+  Eigen::Vector3f input_point;
   size_t point_index = 0;
+
   for (size_t global_offset = 0; global_offset + in_cloud->point_step <= in_cloud->data.size();
        global_offset += in_cloud->point_step) {
     // Point
-    Eigen::Vector3f input_point = get_point_from_global_offset(in_cloud, global_offset);
+    input_point = get_point_from_global_offset(in_cloud, global_offset);
 
-    auto radius{static_cast<float>(std::hypot(input_point.x(), input_point.y()))};
-    auto theta{normalizeRadian(std::atan2(input_point.x(), input_point.y()), 0.0)};
-    auto radial_div{
-      static_cast<size_t>(std::floor(normalizeDegree(theta / radial_divider_angle_rad_, 0.0)))};
+    radius = static_cast<float>(std::hypot(input_point.x(), input_point.y()));
+    theta = normalizeRadian(std::atan2(input_point.x(), input_point.y()), 0.0);
+    radial_div =
+      static_cast<size_t>(std::floor(normalizeDegree(theta / radial_divider_angle_rad_, 0.0)));
 
     current_point.radius = radius;
     current_point.theta = theta;
@@ -305,8 +312,8 @@ void ScanGroundFilterComponent::recheckGroundCluster(
   pcl::PointIndices & non_ground_indices)
 {
   const float min_gnd_height = gnd_cluster.getMinHeight();
-  pcl::PointIndices & gnd_indices = gnd_cluster.getIndicesRef();
-  std::vector<float> & height_list = gnd_cluster.getHeightListRef();
+  const pcl::PointIndices & gnd_indices = gnd_cluster.getIndicesRef();
+  const std::vector<float> & height_list = gnd_cluster.getHeightListRef();
   for (size_t i = 0; i < height_list.size(); ++i) {
     if (height_list.at(i) >= min_gnd_height + non_ground_threshold) {
       non_ground_indices.indices.push_back(gnd_indices.indices.at(i));
