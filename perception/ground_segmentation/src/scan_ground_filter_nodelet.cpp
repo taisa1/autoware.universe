@@ -620,6 +620,7 @@ void ScanGroundFilterComponent::filter(
   output.data.resize(output.row_step);
   output.width = no_ground_indices.indices.size();
   output.fields = input->fields;
+  if (output.fields.size() == 4) output.fields.pop_back();  // remove intensity field
   output.is_dense = true;
   output.height = input->height;
   output.is_bigendian = input->is_bigendian;
