@@ -16,6 +16,7 @@
 #define GROUND_SEGMENTATION__SCAN_GROUND_FILTER_NODELET_HPP_
 
 #include "pointcloud_preprocessor/filter.hpp"
+#include "pointcloud_preprocessor/transform_info.hpp"
 
 #include <vehicle_info_util/vehicle_info.hpp>
 
@@ -50,7 +51,7 @@ private:
   // classified point label
   // (0: not classified, 1: ground, 2: not ground, 3: follow previous point,
   //  4: unkown(currently not used), 5: virtual ground)
-  enum class PointLabel {
+  enum class PointLabel : uint16_t {
     INIT = 0,
     GROUND,
     NON_GROUND,
@@ -59,18 +60,19 @@ private:
     VIRTUAL_GROUND,
     OUT_OF_RANGE
   };
-  struct PointRef
+  struct PointData
   {
-    float grid_size;  // radius of grid
-    float radius;     // cylindrical coords on XY Plane
-    float theta;      // angle deg on XY plane
+    // float grid_size;  // radius of grid
+    // cylindrical coords on XY Plane
+    // float theta;      // angle deg on XY plane
+    //  size_t radial_div;  // index of the radial division to which this point belongs to
+    size_t orig_index;  // index of this point in the source pointcloud
+    pcl::PointXYZ orig_point;
+    float radius;
     PointLabel point_state{PointLabel::INIT};
-    size_t radial_div;           // index of the radial division to which this point belongs to
-    size_t orig_index;           // index of this point in the source pointcloud
-    Eigen::Vector3f orig_point;  // changed
-    uint16_t grid_id;            // id of grid in vertical
+    uint16_t grid_id;  // id of grid in vertical
   };
-  using PointCloudRefVector = std::vector<PointRef>;
+  using PointCloudVector = std::vector<PointData>;
 
   struct GridCenter
   {
@@ -150,6 +152,11 @@ private:
 
   void filter(
     const PointCloud2ConstPtr & input, const IndicesPtr & indices, PointCloud2 & output) override;
+  // TODO(taisa1): Temporary Implementation: Remove this interface when all the filter nodes
+  // conform to new API
+  virtual void faster_filter(
+    const PointCloud2ConstPtr & input, const IndicesPtr & indices, PointCloud2 & output,
+    const pointcloud_preprocessor::TransformInfo & transform_info);
 
   tf2_ros::Buffer tf_buffer_{get_clock()};
   tf2_ros::TransformListener tf_listener_{tf_buffer_};
@@ -175,6 +182,8 @@ private:
   float grid_mode_switch_radius_;           // non linear grid size switching distance
   double global_slope_max_angle_rad_;       // radians
   double local_slope_max_angle_rad_;        // radians
+  double global_slope_max_angle_ratio_;     // radians
+  double local_slope_max_angle_ratio_;      // radians
   double radial_divider_angle_rad_;         // distance in rads between dividers
   double split_points_distance_tolerance_;  // distance in meters between concentric divisions
   double                                    // minimum height threshold regardless the slope,
@@ -194,22 +203,22 @@ private:
    */
 
   /*!
-   * Convert pcl::PointCloud to sorted PointCloudRefVector
+   * Convert pcl::PointCloud to sorted PointCloudVector
    * @param[in] in_cloud Input Point Cloud to be organized in radial segments
    * @param[out] out_radial_ordered_points_manager Vector of Points Clouds,
    *     each element will contain the points ordered
    */
   void convertPointcloud(
     const PointCloud2ConstPtr & in_cloud,
-    std::vector<PointCloudRefVector> & out_radial_ordered_points_manager);
+    std::vector<PointCloudVector> & out_radial_ordered_points_manager);
   void convertPointcloudGridScan(
     const PointCloud2ConstPtr & in_cloud,
-    std::vector<PointCloudRefVector> & out_radial_ordered_points_manager);
+    std::vector<PointCloudVector> & out_radial_ordered_points_manager);
   /*!
    * Output ground center of front wheels as the virtual ground point
    * @param[out] point Virtual ground origin point
    */
-  void calcVirtualGroundOrigin(Eigen::Vector3f & point);
+  void calcVirtualGroundOrigin(pcl::PointXYZ & point);
 
   /*!
    * Classifies Points in the PointCloud as Ground and Not Ground
@@ -222,14 +231,14 @@ private:
   void initializeFirstGndGrids(
     const float h, const float r, const uint16_t id, std::vector<GridCenter> & gnd_grids);
 
-  void checkContinuousGndGrid(PointRef & p, const std::vector<GridCenter> & gnd_grids_list);
-  void checkDiscontinuousGndGrid(PointRef & p, const std::vector<GridCenter> & gnd_grids_list);
-  void checkBreakGndGrid(PointRef & p, const std::vector<GridCenter> & gnd_grids_list);
+  void checkContinuousGndGrid(PointData & p, const std::vector<GridCenter> & gnd_grids_list);
+  void checkDiscontinuousGndGrid(PointData & p, const std::vector<GridCenter> & gnd_grids_list);
+  void checkBreakGndGrid(PointData & p, const std::vector<GridCenter> & gnd_grids_list);
   void classifyPointCloud(
-    std::vector<PointCloudRefVector> & in_radial_ordered_clouds,
+    std::vector<PointCloudVector> & in_radial_ordered_clouds,
     pcl::PointIndices & out_no_ground_indices);
   void classifyPointCloudGridScan(
-    std::vector<PointCloudRefVector> & in_radial_ordered_clouds,
+    std::vector<PointCloudVector> & in_radial_ordered_clouds,
     pcl::PointIndices & out_no_ground_indices);
   /*!
    * Re-classifies point of ground cluster based on their height
@@ -243,7 +252,7 @@ private:
   /*!
    * Returns the resulting complementary PointCloud, one with the points kept
    * and the other removed as indicated in the indices
-   * @param in_cloud Input PointCloud to which the extraction will be performed
+   * @param in_cloud_ptr Input PointCloud to which the extraction will be performed
    * @param in_indices Indices of the points to be both removed and kept
    * @param out_object_cloud Resulting PointCloud with the indices kept
    */
@@ -262,10 +271,10 @@ private:
     nullptr};
   std::unique_ptr<tier4_autoware_utils::DebugPublisher> debug_publisher_ptr_{nullptr};
 
-  inline Eigen::Vector3f get_point_from_global_offset(
+  inline pcl::PointXYZ get_point_from_global_offset(
     const PointCloud2ConstPtr & input, size_t global_offset)
   {
-    Eigen::Vector3f point(
+    pcl::PointXYZ point(
       *reinterpret_cast<const float *>(&input->data[global_offset + x_offset_]),
       *reinterpret_cast<const float *>(&input->data[global_offset + y_offset_]),
       *reinterpret_cast<const float *>(&input->data[global_offset + z_offset_]));
@@ -284,13 +293,6 @@ private:
       intensity_offset_ = z_offset_ + sizeof(float);
     }
     offset_initialized_ = true;
-  }
-
-  // for calcdistance3d
-  inline float calcDistance3dVec3f(const Eigen::Vector3f & point1, const Eigen::Vector3f & point2)
-  {
-    return std::hypot(
-      std::hypot(point1.x() - point2.x(), point1.y() - point2.y()), point1.z() - point2.z());
   }
 
 public:
