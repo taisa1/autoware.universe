@@ -163,7 +163,6 @@ void ScanGroundFilterComponent::convertPointcloudGridScan(
     out_radial_ordered_points[radial_div].emplace_back(current_point);
     ++point_index;
   }
-
   std::string session_name = "scan_ground_filter_node";
   pmu_analyzer::ELAPSED_TIME_TIMESTAMP(session_name, 3, false, 3);
   // sort by distance
@@ -475,19 +474,21 @@ void ScanGroundFilterComponent::classifyPointCloud(
   const pcl::PointXYZ init_ground_point(0, 0, 0);
   pcl::PointXYZ virtual_ground_point(0, 0, 0);
   calcVirtualGroundOrigin(virtual_ground_point);
-  const float tan_local_slope_max_angle = std::tan(local_slope_max_angle_rad_);
+
   // point classification algorithm
   // sweep through each radial division
   for (size_t i = 0; i < in_radial_ordered_clouds.size(); ++i) {
     float prev_gnd_radius = 0.0f;
-    float prev_gnd_slope_ratio = 0.0f;
+    float prev_gnd_slope = 0.0f;
     float points_distance = 0.0f;
     PointsCentroid ground_cluster, non_ground_cluster;
-    float local_slope_ratio = 0.0f;
+    float local_slope = 0.0f;
     PointLabel prev_point_label = PointLabel::INIT;
     pcl::PointXYZ prev_gnd_point(0, 0, 0);
     // loop through each point in the radial div
     for (size_t j = 0; j < in_radial_ordered_clouds[i].size(); ++j) {
+      // const float global_slope_max_angle = global_slope_max_angle_rad_;
+      const float local_slope_max_angle = local_slope_max_angle_rad_;
       auto * p = &in_radial_ordered_clouds[i][j];
       auto * p_prev = &in_radial_ordered_clouds[i][j - 1];
 
@@ -499,7 +500,7 @@ void ScanGroundFilterComponent::classifyPointCloud(
           prev_gnd_point = init_ground_point;
         }
         prev_gnd_radius = std::hypot(prev_gnd_point.x, prev_gnd_point.y);
-        prev_gnd_slope_ratio = 0.0f;
+        prev_gnd_slope = 0.0f;
         ground_cluster.initialize();
         non_ground_cluster.initialize();
         points_distance = calcDistance3d(p->orig_point, prev_gnd_point);
@@ -537,12 +538,8 @@ void ScanGroundFilterComponent::classifyPointCloud(
       }
       if (calculate_slope) {
         // far from the previous point
-        local_slope_ratio = height_from_gnd / radius_distance_from_gnd;
-        // equivalent to if (local_slope - prev_gnd_slope > local_slope_max_angle)
-        if (
-          (local_slope_ratio - prev_gnd_slope_ratio) /
-            (1 + local_slope_ratio * prev_gnd_slope_ratio) >
-          tan_local_slope_max_angle) {
+        local_slope = std::atan2(height_from_gnd, radius_distance_from_gnd);
+        if (local_slope - prev_gnd_slope > local_slope_max_angle) {
           // the point is outside of the local slope threshold
           p->point_state = PointLabel::NON_GROUND;
         } else {
@@ -573,7 +570,7 @@ void ScanGroundFilterComponent::classifyPointCloud(
         prev_gnd_radius = p->radius;
         prev_gnd_point = pcl::PointXYZ(p->orig_point.x, p->orig_point.y, p->orig_point.z);
         ground_cluster.addPoint(p->radius, p->orig_point.z);
-        prev_gnd_slope_ratio = ground_cluster.getAverageSlopeRatio();
+        prev_gnd_slope = ground_cluster.getAverageSlope();
       }
       // update the non ground state
       if (p->point_state == PointLabel::NON_GROUND) {
@@ -582,7 +579,6 @@ void ScanGroundFilterComponent::classifyPointCloud(
     }
   }
 }
-
 void ScanGroundFilterComponent::extractObjectPoints(
   const PointCloud2ConstPtr & in_cloud_ptr, const pcl::PointIndices & in_indices,
   PointCloud2 & out_object_cloud)
