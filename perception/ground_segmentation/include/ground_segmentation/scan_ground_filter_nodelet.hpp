@@ -62,15 +62,11 @@ private:
   };
   struct PointData
   {
-    // float grid_size;  // radius of grid
-    // cylindrical coords on XY Plane
-    // float theta;      // angle deg on XY plane
-    //  size_t radial_div;  // index of the radial division to which this point belongs to
+    float radius;  // cylindrical coords on XY Plane
+    PointLabel point_state{PointLabel::INIT};
+    uint16_t grid_id;   // id of grid in vertical
     size_t orig_index;  // index of this point in the source pointcloud
     pcl::PointXYZ orig_point;
-    float radius;
-    PointLabel point_state{PointLabel::INIT};
-    uint16_t grid_id;  // id of grid in vertical
   };
   using PointCloudVector = std::vector<PointData>;
 
@@ -133,6 +129,8 @@ private:
 
     float getAverageSlope() { return std::atan2(height_avg, radius_avg); }
 
+    float getAverageSlopeRatio() { return height_avg / radius_avg; }
+
     float getAverageHeight() { return height_avg; }
 
     float getAverageRadius() { return radius_avg; }
@@ -152,6 +150,7 @@ private:
 
   void filter(
     const PointCloud2ConstPtr & input, const IndicesPtr & indices, PointCloud2 & output) override;
+
   // TODO(taisa1): Temporary Implementation: Remove this interface when all the filter nodes
   // conform to new API
   virtual void faster_filter(
@@ -166,6 +165,11 @@ private:
   int z_offset_;
   int intensity_offset_;
   bool offset_initialized_;
+
+  void set_field_offsets(const PointCloud2ConstPtr & input);
+
+  pcl::PointXYZ get_point_from_global_offset(
+    const PointCloud2ConstPtr & input, size_t global_offset);
 
   const uint16_t gnd_grid_continual_thresh_ = 3;
   bool elevation_grid_mode_;
@@ -182,8 +186,8 @@ private:
   float grid_mode_switch_radius_;           // non linear grid size switching distance
   double global_slope_max_angle_rad_;       // radians
   double local_slope_max_angle_rad_;        // radians
-  double global_slope_max_angle_ratio_;     // radians
-  double local_slope_max_angle_ratio_;      // radians
+  double global_slope_max_ratio_;           //
+  double local_slope_max_ratio_;            //
   double radial_divider_angle_rad_;         // distance in rads between dividers
   double split_points_distance_tolerance_;  // distance in meters between concentric divisions
   double                                    // minimum height threshold regardless the slope,
@@ -203,7 +207,7 @@ private:
    */
 
   /*!
-   * Convert pcl::PointCloud to sorted PointCloudVector
+   * Convert sensor_msgs::msg::PointCloud2 to sorted PointCloudVector
    * @param[in] in_cloud Input Point Cloud to be organized in radial segments
    * @param[out] out_radial_ordered_points_manager Vector of Points Clouds,
    *     each element will contain the points ordered
@@ -270,30 +274,6 @@ private:
   std::unique_ptr<tier4_autoware_utils::StopWatch<std::chrono::milliseconds>> stop_watch_ptr_{
     nullptr};
   std::unique_ptr<tier4_autoware_utils::DebugPublisher> debug_publisher_ptr_{nullptr};
-
-  inline pcl::PointXYZ get_point_from_global_offset(
-    const PointCloud2ConstPtr & input, size_t global_offset)
-  {
-    pcl::PointXYZ point(
-      *reinterpret_cast<const float *>(&input->data[global_offset + x_offset_]),
-      *reinterpret_cast<const float *>(&input->data[global_offset + y_offset_]),
-      *reinterpret_cast<const float *>(&input->data[global_offset + z_offset_]));
-    return point;
-  }
-
-  inline void set_field_offsets(const PointCloud2ConstPtr & input)
-  {
-    x_offset_ = input->fields[pcl::getFieldIndex(*input, "x")].offset;
-    y_offset_ = input->fields[pcl::getFieldIndex(*input, "y")].offset;
-    z_offset_ = input->fields[pcl::getFieldIndex(*input, "z")].offset;
-    int intensity_index = pcl::getFieldIndex(*input, "intensity");
-    if (intensity_index != -1) {
-      intensity_offset_ = input->fields[intensity_index].offset;
-    } else {
-      intensity_offset_ = z_offset_ + sizeof(float);
-    }
-    offset_initialized_ = true;
-  }
 
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
