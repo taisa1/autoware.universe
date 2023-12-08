@@ -255,12 +255,12 @@ void ScanGroundFilterComponent::checkContinuousGndGrid(
   float tmp_delta_radius = gnd_grids_list.back().radius - gnd_buff_radius;
 
   curr_gnd_slope_ratio = tmp_delta_mean_z / tmp_delta_radius;
-  curr_gnd_slope_ratio = curr_gnd_slope_ratio < -global_slope_max_ratio_
-                           ? -global_slope_max_ratio_
-                           : curr_gnd_slope_ratio;
-  curr_gnd_slope_ratio = curr_gnd_slope_ratio > global_slope_max_ratio_
-                           ? global_slope_max_ratio_
-                           : curr_gnd_slope_ratio;
+  curr_gnd_slope_ratio = curr_gnd_slope_ratio < -global_slope_max_ratio_ ? -global_slope_max_ratio_
+                                                                         : curr_gnd_slope_ratio;
+  curr_gnd_slope_ratio =
+    curr_gnd_slope_ratio > global_slope_max_ratio_ ? global_slope_max_ratio_ : curr_gnd_slope_ratio;
+
+  next_gnd_z = curr_gnd_slope_ratio * (p.radius - gnd_buff_radius) + gnd_buff_z_mean;
 
   float gnd_z_local_thresh = std::tan(DEG2RAD(5.0)) * (p.radius - gnd_grids_list.back().radius);
 
